@@ -1,0 +1,261 @@
+﻿@page "/"
+@using ContactList_Shared.DTO
+@using ContactList_Shared.Models;
+@using System.Text.RegularExpressions
+@inject HttpClient httpClient
+@inject IJSRuntime JsRuntime
+
+
+<PageTitle>Home</PageTitle>
+
+@if (errorMessage != null)
+{
+    <p>@errorMessage</p>
+}
+
+<div>
+    <div style="float:left">
+        <h1>ContactListApp</h1>
+    </div>
+    <div style="float:left;width:50%;">
+        <div style="float:right;">
+            @if (userLoggedIn)
+            {
+                <p>Logged in</p>
+                <button type="submit" class="btn btn-primary" @onclick="Logout">Logout</button>
+            }
+            else
+            {
+                <p>Email:</p>
+                <input type="email" @bind="login.Email" />
+                <p>Password:</p>
+                <input type="password" @bind="login.Password" />
+                <button type="submit" class="btn btn-primary" @onclick="Login">Login</button>
+            }
+        </div>
+    </div>
+</div>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>First name</th>
+            <th>Last name</th>
+            <th>Email</th>
+            <th>Category</th>
+            <th>Subcategory</th>
+            <th>Phone</th>
+            <th>Date of birth</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var contact in contacts)
+        {
+            <tr>
+                <td>@contact.FirstName</td>
+                <td>@contact.LastName</td>
+                <td>@contact.Email</td>
+                <td>@contact.Category</td>
+                <td>@contact.Subcategory</td>
+                <td>@contact.Phone</td>
+                <td>
+                    @if (contact.DateOfBirth != DateTime.MinValue)
+                    {
+                        @contact.DateOfBirth
+                    }
+                </td>
+                <td>
+                    <button @onclick="() => ShowDetails(contact)">Details</button>
+                    @if (userLoggedIn)
+                    {
+                        <button @onclick="() => EditContact(contact)">Edit</button>
+                        <button @onclick="() => ShowConfirmationDialog(contact)">Remove</button>
+                    }
+                </td>
+            </tr>
+        }
+        @if (userLoggedIn)
+        {
+            <tr>
+                @if (addingNewContact)
+                {
+                    <td>
+                        <input type="text" @bind="newContact.FirstName" />
+                    </td>
+                    <td>
+                        <input type="text" @bind="newContact.LastName" />
+                    </td>
+                    <td>
+                        <input type="email" @bind="newContact.Email" />
+                        <p>Password:</p> <input type="password" @bind="newContact.Password" />
+                    </td>
+                    <td>
+                        <select @bind="@newContact.Category">
+                            @foreach (var item in distinctCategories)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </td>
+                    <td>
+                        <select @bind="@newContact.Subcategory">
+                            @foreach (var item in distinctSubcategories)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </td>
+                    <td>
+                        <input type="tel" @bind="newContact.Phone" />
+                    </td>
+                    <td>
+                        <input type="datetime-local" @bind="newContact.DateOfBirth" />
+                    </td> 
+                }
+                <td>
+                    @if(addingNewContact == false)
+                    {
+                        <button @onclick ="() => AddContact()">Add new</button>
+                    }
+                    else
+                    {
+                        <button @onclick="() => FinishAddingContact()">Save</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<DetailedContactDTO> contacts = new List<DetailedContactDTO>();
+    private CreateContactDTO newContact = new CreateContactDTO() {DateOfBirth = DateTime.Now};
+    private bool userLoggedIn = false;
+    private Login login = new Login();
+    private string errorMessage;
+    private bool addingNewContact = false;
+    private List<CategoryDTO> categories = new List<CategoryDTO>();
+    private List<string> distinctCategories = new List<string>();
+    private List<string> distinctSubcategories = new List<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        contacts = await httpClient.GetFromJsonAsync<List<DetailedContactDTO>>("api/Contact");
+        categories = await httpClient.GetFromJsonAsync<List<CategoryDTO>>("api/Category");
+
+        distinctCategories = categories.DistinctBy(c => c.Name).Select(c => c.Name).ToList();
+        distinctSubcategories = categories.DistinctBy(c => c.Subcategory).Select(c => c.Subcategory).ToList();
+    }
+
+    private async Task ShowDetails(DetailedContactDTO contact)
+    {
+        var id = contact.Id;
+        var detailedContact = await httpClient.GetFromJsonAsync<DetailedContactDTO>($"api/Contact/{id}");
+        var index = contacts.IndexOf(contact);
+        if (index >=0 )
+        {
+            contacts[index] = detailedContact;
+            StateHasChanged();
+        }
+    }
+
+    private void EditContact(DetailedContactDTO contact)
+    {
+        //TODO add edit feature
+    }
+
+    private void AddContact()
+    {
+        addingNewContact = true;
+    }
+
+    private async Task FinishAddingContact()
+    {
+        if (!IsValidEmail(newContact.Email))
+        {
+            errorMessage = "Invalid email address!";
+            return;
+        }
+        if (!IsPasswordValid(newContact.Password))
+        {
+            errorMessage = "Password is too weak!";
+            return;
+        }
+        errorMessage = null;
+        addingNewContact = false;
+        await httpClient.PostAsJsonAsync<CreateContactDTO>("api/Contact", newContact);
+        contacts = await httpClient.GetFromJsonAsync<List<DetailedContactDTO>>("api/Contact");
+        StateHasChanged();
+    }
+
+    private async Task ShowConfirmationDialog(DetailedContactDTO contact)
+    {
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm", "Are you sure?");
+        if (confirmed)
+        {
+            var id = contact.Id;
+            await httpClient.DeleteAsync($"api/Contact/?id={id}");
+            var index = contacts.IndexOf(contact);
+            if (index >= 0)
+            {
+                contacts.RemoveAt(index);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task Login()
+    {
+        var succesfullLogin = await CheckIfLoginCredentialsAreOk();
+        if (succesfullLogin)
+        {
+            errorMessage = null;
+            userLoggedIn = true;
+        }
+        else
+        {
+            errorMessage = "Invalid email or password.";
+        }
+    }
+
+    private void Logout()
+    {
+        login.Email = string.Empty;
+        login.Password = string.Empty;
+        userLoggedIn = false;
+    }
+
+    private bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsPasswordValid(string password)
+    {
+        // Password must contain at least 8 characters, including uppercase, lowercase, and a number
+        var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
+        return regex.IsMatch(password);
+    }
+
+    private async Task<bool> CheckIfLoginCredentialsAreOk()
+    {
+        var httpResponse = await httpClient.PostAsJsonAsync<Login>("api/Contact/login", login);
+        if (httpResponse.IsSuccessStatusCode)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+}
