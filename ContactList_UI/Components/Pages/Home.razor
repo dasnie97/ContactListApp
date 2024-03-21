@@ -177,7 +177,7 @@
             errorMessage = "Invalid email address!";
             return;
         }
-        if (!IsPasswordValid(newContact.Password))
+        if (!IsValidPassword(newContact.Password))
         {
             errorMessage = "Password is too weak!";
             return;
@@ -187,22 +187,6 @@
         await httpClient.PostAsJsonAsync<CreateContactDTO>("api/Contact", newContact);
         contacts = await httpClient.GetFromJsonAsync<List<DetailedContactDTO>>("api/Contact");
         StateHasChanged();
-    }
-
-    private async Task ShowConfirmationDialog(DetailedContactDTO contact)
-    {
-        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm", "Are you sure?");
-        if (confirmed)
-        {
-            var id = contact.Id;
-            await httpClient.DeleteAsync($"api/Contact/?id={id}");
-            var index = contacts.IndexOf(contact);
-            if (index >= 0)
-            {
-                contacts.RemoveAt(index);
-                StateHasChanged();
-            }
-        }
     }
 
     private async Task Login()
@@ -216,6 +200,19 @@
         else
         {
             errorMessage = "Invalid email or password.";
+        }
+    }
+
+    private async Task<bool> CheckIfLoginCredentialsAreOk()
+    {
+        var httpResponse = await httpClient.PostAsJsonAsync<Login>("api/Contact/login", login);
+        if (httpResponse.IsSuccessStatusCode)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
         }
     }
 
@@ -239,23 +236,26 @@
         }
     }
 
-    private bool IsPasswordValid(string password)
+    private bool IsValidPassword(string password)
     {
         // Password must contain at least 8 characters, including uppercase, lowercase, and a number
         var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
         return regex.IsMatch(password);
     }
 
-    private async Task<bool> CheckIfLoginCredentialsAreOk()
+    private async Task ShowConfirmationDialog(DetailedContactDTO contact)
     {
-        var httpResponse = await httpClient.PostAsJsonAsync<Login>("api/Contact/login", login);
-        if (httpResponse.IsSuccessStatusCode)
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm", "Are you sure?");
+        if (confirmed)
         {
-            return true;
-        }
-        else
-        {
-            return false;
+            var id = contact.Id;
+            await httpClient.DeleteAsync($"api/Contact/?id={id}");
+            var index = contacts.IndexOf(contact);
+            if (index >= 0)
+            {
+                contacts.RemoveAt(index);
+                StateHasChanged();
+            }
         }
     }
 }
